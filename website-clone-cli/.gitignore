@@ -40,7 +40,7 @@ jspm_packages/
 *.tsbuildinfo
 
 # Optional npm cache directory
-.npm/
+.npm/env
 
 # Optional eslint cache
 .eslintcache
