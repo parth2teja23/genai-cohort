@@ -55,6 +55,10 @@ npm i axios cheerio mime-types
 ```bash
 node clone-site.mjs <url> [--outdir folder] [--ua "User-Agent"] [--timeout ms] [--concurrency N] [--verbose]
 ```
+or you can directly use it as
+```
+node clone-site.mjs https://www.google.com
+```
 
 **Examples**
 ```bash
