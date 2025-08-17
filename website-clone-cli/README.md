@@ -40,9 +40,9 @@ Meanwhile, the actual files are written to disk.
 ---
 
 ## Install
-
-1) Save the script as `clone-site.mjs`.
-2) Install deps:
+1) Create a .env file and add openai key as OPENAI_API_KEY=YOUR_OPENAI_KEY
+2) Save the script as `clone-site.mjs`.
+3) Install deps:
 ```bash
 npm init -y
 npm i axios cheerio mime-types
@@ -195,5 +195,6 @@ MIT
 ---
 
 ## Credits
-
+Built by Parth Tuteja
+Youtube link: https://youtu.be/MpiAInHGOKU
 Built with **Node.js**, **axios**, **cheerio**, and **mime-types**. Logs inspired by  **START → THINK → TOOL → OBSERVE → OUTPUT** step format taught in GenAI Cohort.
