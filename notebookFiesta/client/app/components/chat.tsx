@@ -42,7 +42,7 @@ const ChatComponent: React.FC = () => {
     ]);
   };
 
-  return (
+return (
   <div className="p-4 h-screen flex flex-col">
     {/* Chat Messages */}
     <div className="flex-1 overflow-y-auto space-y-3 pb-20">
@@ -60,13 +60,19 @@ const ChatComponent: React.FC = () => {
               }`}
           >
             {msg.content}
-            {msg.documents && (
-              <div className="mt-2 text-xs text-gray-700">
-                {msg.documents.map((doc, i) => (
-                  <div key={i} className="truncate">
-                    📄 {doc.metdata?.source} (p.{doc.metdata?.loc?.pageNumber})
-                  </div>
-                ))}
+
+            {/* Document References */}
+            {msg.documents && msg.documents.length > 0 && (
+              <div className="mt-2 text-xs text-gray-700 space-y-1">
+                {msg.documents.map((doc, i) => {
+                  const source = doc.metadata?.source || "Unknown file";
+                  const page = doc.metadata?.loc?.pageNumber || "N/A";
+                  return (
+                    <div key={i} className="truncate">
+                      📄 <span className="font-medium">{source}</span> (Page {page})
+                    </div>
+                  );
+                })}
               </div>
             )}
           </div>
@@ -92,3 +98,4 @@ const ChatComponent: React.FC = () => {
 };
 
 export default ChatComponent;
+
