@@ -271,8 +271,8 @@ Return a concise final answer to the user’s task when done.
 });
 
 // -------------------- Run: give it any goal --------------------
-const TASK = `Go to https://ui.chaicode.com and find the sign up code under authentication. Fill the following details: Name - Parth Tuteja. Email - parth@example.com. Password - securePassword123.`;
-// const TASK = `Go to https://www.google.com and  search for who is prime minister of india and press enter`;
+// const TASK = `Go to https://ui.chaicode.com and find the sign up code under authentication. Fill the following details: Name - Parth Tuteja. Email - parth@example.com. Password - securePassword123.`;
+const TASK = `Go to https://www.youtube.com and seach for never gonna give you up and play the video that comes up at top `;
 
 const result = await run(BrowserAgent, TASK, {
   max_output_tokens: 300,

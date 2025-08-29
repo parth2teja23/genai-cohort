@@ -9,6 +9,7 @@ To install dependencies for the project, run:
 ```bash
 npm i
 ```
+yt link: https://youtu.be/m88X9yaL3Q8
 
 ## Versions
 
