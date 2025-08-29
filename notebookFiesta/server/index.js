@@ -1,120 +1,88 @@
-import express from 'express';
-import cors from 'cors';
-import multer from 'multer';
-import { Queue } from 'bullmq';
-import { OpenAIEmbeddings } from '@langchain/openai';
-import { QdrantVectorStore } from '@langchain/qdrant';
-import OpenAI from 'openai';
+import express from "express";
+import cors from "cors";
+import multer from "multer";
+import { Queue } from "bullmq";
+import { OpenAIEmbeddings } from "@langchain/openai";
+import { QdrantVectorStore } from "@langchain/qdrant";
+import OpenAI from "openai";
+import dotenv from "dotenv";
+dotenv.config();
 
-// ===================== OpenAI Client =====================
-const client = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY || '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',
+const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+
+const queue = new Queue("file-upload-queue", {
+  connection: { host: "localhost", port: 6379 },
 });
 
-// ===================== BullMQ Queue =====================
-const queue = new Queue('file-upload-queue', {
-  connection: {
-    host: 'localhost',
-    port: 6379,
-  },
-});
-
-// ===================== Multer Storage =====================
 const storage = multer.diskStorage({
-  destination: function (req, file, cb) {
-    cb(null, 'uploads/');
-  },
-  filename: function (req, file, cb) {
-    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1e9);
-    cb(null, `${uniqueSuffix}-${file.originalname}`);
+  destination: (_req, _file, cb) => cb(null, "uploads/"),
+  filename: (_req, file, cb) => {
+    const unique = Date.now() + "-" + Math.round(Math.random() * 1e9);
+    cb(null, `${unique}-${file.originalname}`);
   },
 });
-const upload = multer({ storage: storage });
+const upload = multer({ storage });
 
-// ===================== Express App =====================
 const app = express();
 app.use(cors());
 app.use(express.json());
 
-// ===================== Memory Store =====================
-// In production → store per-user history in DB/Redis
 let conversationHistory = {};
 
-app.get('/', (req, res) => {
-  return res.json({ status: 'All Good!' });
-});
+app.get("/", (_req, res) => res.json({ status: "All Good!" }));
 
-// ===================== File Upload =====================
-app.post('/upload/pdf', upload.single('pdf'), async (req, res) => {
+app.post("/upload/pdf", upload.single("pdf"), async (req, res) => {
+  const file = req.file;
   await queue.add(
-    'file-ready',
+    "file-ready",
     JSON.stringify({
-      filename: req.file.originalname,
-      destination: req.file.destination,
-      path: req.file.path,
+      filename: file?.originalname,
+      destination: file?.destination,
+      path: file?.path,
     })
   );
-  return res.json({ message: 'uploaded' });
+  return res.json({ message: "uploaded" });
 });
 
-// ===================== Chat Endpoint =====================
-app.get('/chat', async (req, res) => {
-  const userQuery = req.query.message;
-  const sessionId = req.query.sessionId || 'default'; // for multi-user later
+app.post("/chat", async (req, res) => {
+  const userQuery = req.body?.message ?? "";
+  const sessionId = req.body?.sessionId || "default";
 
-  if (!conversationHistory[sessionId]) {
-    conversationHistory[sessionId] = [];
-  }
+  conversationHistory[sessionId] ||= [];
+  conversationHistory[sessionId].push({ role: "user", content: userQuery });
 
-  // Save user query
-  conversationHistory[sessionId].push({ role: 'user', content: userQuery });
-
-  // ====== Embed + Retrieve PDF Context ======
   const embeddings = new OpenAIEmbeddings({
-    model: 'text-embedding-3-small',
-    apiKey: process.env.OPENAI_API_KEY || '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',
+    model: "text-embedding-3-small",
+    apiKey: process.env.OPENAI_API_KEY,
   });
 
   const vectorStore = await QdrantVectorStore.fromExistingCollection(embeddings, {
-    url: 'http://localhost:6333',
-    collectionName: 'langchainjs-testing',
+    url: "http://localhost:6333",
+    collectionName: "notebookfiesta",
   });
 
-  const ret = vectorStore.asRetriever({ k: 2 });
-  const result = await ret.invoke(userQuery);
+  const ret = vectorStore.asRetriever({ k: 3 });
+  const retrieved = await ret.invoke(userQuery);
 
-  // ====== Build System Prompt ======
   const SYSTEM_PROMPT = `
-  You are a helpful AI Assistant who answers the user query based on the context from PDF files.
-  Always use the PDF context when relevant. If not found, say "I couldn’t find that in the PDF, but here’s what I know."
-
-  Context from PDF:
-  ${JSON.stringify(result)}
+  You are a helpful assistant. Use the following PDF snippets if relevant.
+  If not found, say: "I couldn’t find that in the PDF, but here’s what I know."
   `;
 
-  // ====== Construct Message History ======
   const messages = [
-    { role: 'system', content: SYSTEM_PROMPT },
+    { role: "system", content: SYSTEM_PROMPT },
     ...conversationHistory[sessionId],
   ];
 
-  // ====== OpenAI Chat Call ======
   const chatResult = await client.chat.completions.create({
-    model: 'gpt-5-nano',
+    model: "gpt-5-nano",
     messages,
   });
 
-  const assistantReply = chatResult.choices[0].message?.content || 'Sorry, I got stuck.';
+  const reply = chatResult.choices[0].message?.content || "Sorry, I got stuck.";
+  conversationHistory[sessionId].push({ role: "assistant", content: reply });
 
-  // Save assistant reply
-  conversationHistory[sessionId].push({ role: 'assistant', content: assistantReply });
-
-  return res.json({
-    message: assistantReply,
-    docs: result,
-    history: conversationHistory[sessionId], // useful for frontend debug
-  });
+  res.json({ message: reply, docs: retrieved, history: conversationHistory[sessionId] });
 });
 
-// ===================== Start Server =====================
-app.listen(8000, () => console.log(`Server started on PORT:8000`));
+app.listen(8000, () => console.log("Server started on PORT:8000"));

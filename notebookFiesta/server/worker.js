@@ -1,47 +1,61 @@
-import { Worker } from 'bullmq';
-import { OpenAIEmbeddings } from '@langchain/openai';
-import { QdrantVectorStore } from '@langchain/qdrant';
-import { Document } from '@langchain/core/documents';
-import { PDFLoader } from '@langchain/community/document_loaders/fs/pdf';
-import { CharacterTextSplitter } from '@langchain/textsplitters';
+import { Worker } from "bullmq";
+import { OpenAIEmbeddings } from "@langchain/openai";
+import { QdrantVectorStore } from "@langchain/qdrant";
+import { PDFLoader } from "@langchain/community/document_loaders/fs/pdf";
+import { CharacterTextSplitter } from "@langchain/textsplitters";
+import dotenv from "dotenv";
+dotenv.config();
+
+const REDIS_HOST = process.env.REDIS_HOST || "localhost";
+const REDIS_PORT = Number(process.env.REDIS_PORT || 6379);
+const QDRANT_URL = process.env.QDRANT_URL || "http://localhost:6333";
+const QDRANT_COLLECTION = process.env.QDRANT_COLLECTION || "notebookfiesta";
+const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
+
+if (!OPENAI_API_KEY) {
+  console.warn("[worker] WARN: OPENAI_API_KEY is not set");
+}
 
 const worker = new Worker(
-  'file-upload-queue',
+  "file-upload-queue",
   async (job) => {
-    console.log(`Job:`, job.data);
-    const data = JSON.parse(job.data);
-    /*
-    Path: data.path
-    read the pdf from path,
-    chunk the pdf,
-    call the openai embedding model for every chunk,
-    store the chunk in qdrant db
-    */
+    console.log("[worker] Job received:", job.id);
 
-    // Load the PDF
-    const loader = new PDFLoader(data.path);
+    // Your server enqueues JSON.stringify(...), so parse here:
+    const data = typeof job.data === "string" ? JSON.parse(job.data) : job.data;
+
+    // 1) Load PDF (split by pages)
+    const loader = new PDFLoader(data.path, { splitPages: true });
     const docs = await loader.load();
 
+    // 2) Chunk pages
+    const splitter = new CharacterTextSplitter({ chunkSize: 1200, chunkOverlap: 150 });
+    const chunks = await splitter.splitDocuments(docs);
+
+    // 3) Enrich metadata
+    const enriched = chunks.map((d) => ({
+      ...d,
+      metadata: { ...d.metadata, source: data.filename || data.path },
+    }));
+
+    // 4) Embed & upsert into Qdrant (creates collection if missing)
     const embeddings = new OpenAIEmbeddings({
-      model: 'text-embedding-3-small',
-      apiKey: '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',
+      model: "text-embedding-3-small",
+      apiKey: OPENAI_API_KEY,
     });
 
-    const vectorStore = await QdrantVectorStore.fromExistingCollection(
-      embeddings,
-      {
-        url: 'http://localhost:6333',
-        collectionName: 'langchainjs-testing',
-      }
-    );
-    await vectorStore.addDocuments(docs);
-    console.log(`All docs are added to vector store`);
+    await QdrantVectorStore.fromDocuments(enriched, embeddings, {
+      url: QDRANT_URL,
+      collectionName: QDRANT_COLLECTION,
+    });
+
+    console.log("[worker] PDF embedded and stored.");
   },
   {
-    concurrency: 100,
-    connection: {
-      host: 'localhost',
-      port: '6379',
-    },
+    concurrency: 4,
+    connection: { host: REDIS_HOST, port: REDIS_PORT },
   }
 );
+
+worker.on("completed", (job) => console.log(`[worker] Job ${job.id} completed`));
+worker.on("failed", (job, err) => console.error(`[worker] Job ${job?.id} failed:`, err));
