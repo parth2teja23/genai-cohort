@@ -43,6 +43,22 @@ const inspirationThumbnails: { title: string; url: string }[] = [
 ];
 
 // -------------------------
+// Types for request/response
+// -------------------------
+type InlineData = { mimeType: string; data: string };
+type TextPart = { text: string };
+type InlineDataPart = { inlineData: InlineData };
+type Part = TextPart | InlineDataPart;
+
+type ContentResp = { parts: Array<TextPart | InlineDataPart> };
+type CandidateResp = { content: ContentResp };
+type GenerateResp = { candidates?: CandidateResp[] };
+
+function isInlineDataPart(p: TextPart | InlineDataPart): p is InlineDataPart {
+  return "inlineData" in p;
+}
+
+// -------------------------
 // Loading State Component
 // -------------------------
 const LoadingState: React.FC = () => {
@@ -188,7 +204,7 @@ const App: React.FC = () => {
 
   const handleDrop = (e: React.DragEvent, setter: (val: string | null) => void) => {
     e.preventDefault();
-    setter(null); // reset drag state elsewhere
+    setter(null);
     const files = (e.dataTransfer && e.dataTransfer.files) || null;
     if (files && files[0]) {
       handleImageUpload(files[0], setter);
@@ -196,13 +212,13 @@ const App: React.FC = () => {
   };
 
   const handleAddCustomPill = (
-    _e: React.FormEvent,
+    e: React.FormEvent,
     customValue: string,
     setter: React.Dispatch<React.SetStateAction<string[]>>,
     customSetter: (val: string) => void,
     currentPills: string[]
   ) => {
-    _e.preventDefault();
+    e.preventDefault();
     const v = customValue.trim();
     if (v !== "" && !currentPills.includes(v)) {
       setter((prev) => [...prev, v]);
@@ -222,7 +238,7 @@ const App: React.FC = () => {
         setInspirationImage(reader.result as string);
       };
       reader.readAsDataURL(blob);
-    } catch (_err) {
+    } catch {
       setError("Failed to load inspiration image.");
     }
   };
@@ -251,7 +267,7 @@ const App: React.FC = () => {
     }
 
     try {
-      const parts: any[] = [];
+      const parts: Part[] = [];
 
       // Base image
       const base64Image = image.split(",")[1];
@@ -288,8 +304,10 @@ const App: React.FC = () => {
 
       // Inspiration (style) image
       if (inspirationImage) {
-        const base64Inspiration = inspirationImage.split(",")[1] ?? null;
-        const inspirationMimeType = inspirationImage.includes("data:")
+        const base64Inspiration = inspirationImage.startsWith("data:")
+          ? inspirationImage.split(",")[1]
+          : null;
+        const inspirationMimeType = inspirationImage.startsWith("data:")
           ? inspirationImage.split(":")[1].split(";")[0]
           : "image/jpeg"; // fallback type for remote URL if still not converted
         if (base64Inspiration) {
@@ -319,14 +337,13 @@ const App: React.FC = () => {
           });
           if (response.ok) break;
           const errorData = await response.json().catch(() => ({}));
-          // eslint-disable-next-line no-console
           console.error("API Error Response:", errorData);
           throw new Error(`API call failed with status ${response.status}`);
-        } catch (_err) {
+        } catch {
           if (i < MAX_RETRIES - 1) {
             await new Promise((res) => setTimeout(res, 1000 * Math.pow(2, i)));
           } else {
-            throw _err;
+            throw new Error("Max retries reached.");
           }
         }
       }
@@ -335,13 +352,10 @@ const App: React.FC = () => {
         throw new Error("No response from API.");
       }
 
-      const result = await response.json();
-      // eslint-disable-next-line no-console
+      const result: GenerateResp = await response.json();
       console.log("Gemini API Full Response:", result);
 
-      const imagePart = result?.candidates?.[0]?.content?.parts?.find(
-        (p: any) => p.inlineData
-      );
+      const imagePart = result?.candidates?.[0]?.content?.parts?.find(isInlineDataPart);
       const base64Data = imagePart?.inlineData?.data;
 
       if (base64Data) {
@@ -350,7 +364,6 @@ const App: React.FC = () => {
         setError("Failed to generate image. Please try again with a different prompt.");
       }
     } catch (err) {
-      // eslint-disable-next-line no-console
       console.error("Generation error:", err);
       setError("An error occurred. Please check the console for details.");
     } finally {
@@ -471,7 +484,7 @@ const App: React.FC = () => {
             Choose an Inspiration Thumbnail
           </h3>
           <p className="text-gray-400 mb-4">
-            Select thumbnail according to your video.
+            Selecting one of these ensures a proper 16:9 aspect ratio.
           </p>
           <div className="flex flex-wrap gap-4 justify-center">
             {/* eslint-disable @next/next/no-img-element */}
